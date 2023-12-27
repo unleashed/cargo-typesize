@@ -95,6 +95,8 @@ impl TypeSize {
             println!("Inspecting layout of bin: {bin}");
         } else if let Ok(lib) = env::var("CARGO_PKG_NAME") {
             println!("Inspecting layout of lib: {lib}");
+        } else {
+            println!("Inspecting layout (couldn't find package name)");
         }
 
         let max_bytes_len = if let Some((_, largest)) = sorted.last() {
