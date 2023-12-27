@@ -87,6 +87,7 @@ impl TypeSize {
             .insert(format!("{ty:?} - {:?}", item.span), layout.size().bytes());
     }
 
+    #[allow(clippy::print_stdout)]
     fn print_typesizes(&self) {
         let mut sorted: Vec<(&String, &u64)> = self.sizes.iter().collect();
         sorted.sort_by_key(|(name, &bytes)| (bytes, &**name));
@@ -124,6 +125,7 @@ impl rustc_driver::Callbacks for TypeSize {
         assert!(self.sizes.is_empty(), "Already computed sizes");
 
         // Analyze the program and inspect the types of definitions.
+        #[allow(clippy::unwrap_used)]
         queries.global_ctxt().unwrap().enter(|tcx| {
             for id in tcx.hir().items() {
                 let hir = tcx.hir();
@@ -157,6 +159,7 @@ impl rustc_driver::Callbacks for TypeSize {
     }
 }
 
+#[allow(clippy::print_stdout)]
 fn display_help() {
     println!(
         "\
@@ -183,6 +186,7 @@ fn toolchain_path(home: Option<String>, toolchain: Option<String>) -> Option<Pat
     })
 }
 
+#[allow(clippy::expect_used)]
 fn read_sys_root(sys_root_arg: Option<&str>) -> String {
     // Get the sysroot, looking from most specific to this invocation to the least:
     // - command line
@@ -231,6 +235,7 @@ fn read_sys_root(sys_root_arg: Option<&str>) -> String {
         )
 }
 
+#[allow(clippy::exit)]
 pub fn main() {
     let early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
     rustc_driver::init_rustc_env_logger(&early_dcx);
