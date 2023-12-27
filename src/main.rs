@@ -97,11 +97,11 @@ impl TypeSizeCmd {
 
     fn into_std_cmd(self) -> Command {
         let mut cmd = Command::new("cargo");
-        let typesize_args: String = self
-            .typesize_args
-            .iter()
-            .map(|arg| format!("{}__TYPESIZE_HACKERY__", arg))
-            .collect();
+        let mut typesize_args = String::new();
+        self.typesize_args.iter().for_each(|arg| {
+            typesize_args.push_str(arg);
+            typesize_args.push_str("__TYPESIZE_HACKERY__");
+        });
 
         cmd.env("RUSTC_WORKSPACE_WRAPPER", Self::path())
             .env("TYPESIZE_ARGS", typesize_args)
