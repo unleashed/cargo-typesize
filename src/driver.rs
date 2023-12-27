@@ -50,22 +50,27 @@ fn arg_value<'a, T: Deref<Target = str>>(
     None
 }
 
-#[test]
-fn test_arg_value() {
-    let args = &["--bar=bar", "--foobar", "123", "--foo"];
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    assert_eq!(arg_value(&[] as &[&str], "--foobar", |_| true), None);
-    assert_eq!(arg_value(args, "--bar", |_| false), None);
-    assert_eq!(arg_value(args, "--bar", |_| true), Some("bar"));
-    assert_eq!(arg_value(args, "--bar", |p| p == "bar"), Some("bar"));
-    assert_eq!(arg_value(args, "--bar", |p| p == "foo"), None);
-    assert_eq!(arg_value(args, "--foobar", |p| p == "foo"), None);
-    assert_eq!(arg_value(args, "--foobar", |p| p == "123"), Some("123"));
-    assert_eq!(
-        arg_value(args, "--foobar", |p| p.contains("12")),
-        Some("123")
-    );
-    assert_eq!(arg_value(args, "--foo", |_| true), None);
+    #[test]
+    fn test_arg_value() {
+        let args = &["--bar=bar", "--foobar", "123", "--foo"];
+
+        assert_eq!(arg_value::<&str>(&[], "--foobar", |_| true), None);
+        assert_eq!(arg_value(args, "--bar", |_| false), None);
+        assert_eq!(arg_value(args, "--bar", |_| true), Some("bar"));
+        assert_eq!(arg_value(args, "--bar", |p| p == "bar"), Some("bar"));
+        assert_eq!(arg_value(args, "--bar", |p| p == "foo"), None);
+        assert_eq!(arg_value(args, "--foobar", |p| p == "foo"), None);
+        assert_eq!(arg_value(args, "--foobar", |p| p == "123"), Some("123"));
+        assert_eq!(
+            arg_value(args, "--foobar", |p| p.contains("12")),
+            Some("123")
+        );
+        assert_eq!(arg_value(args, "--foo", |_| true), None);
+    }
 }
 
 struct DefaultCallbacks;
@@ -82,14 +87,17 @@ impl TypeSize {
             .insert(format!("{ty:?} - {:?}", item.span), layout.size().bytes());
     }
 
+    #[allow(clippy::print_stdout)]
     fn print_typesizes(&self) {
-        let mut sorted = Vec::from_iter(self.sizes.iter());
-        sorted.sort_by_key(|(name, bytes)| (*bytes, name.clone()));
+        let mut sorted: Vec<(&String, &u64)> = self.sizes.iter().collect();
+        sorted.sort_by_key(|(name, &bytes)| (bytes, &**name));
 
         if let Ok(bin) = env::var("CARGO_BIN_NAME") {
             println!("Inspecting layout of bin: {bin}");
         } else if let Ok(lib) = env::var("CARGO_PKG_NAME") {
             println!("Inspecting layout of lib: {lib}");
+        } else {
+            println!("Inspecting layout (couldn't find package name)");
         }
 
         let max_bytes_len = if let Some((_, largest)) = sorted.last() {
@@ -100,8 +108,7 @@ impl TypeSize {
 
         for (name, bytes) in sorted {
             let bytes_str = format!("{bytes}");
-            let pad =
-                String::from_iter(std::iter::repeat(" ").take(max_bytes_len - bytes_str.len()));
+            let pad = " ".repeat(max_bytes_len.saturating_sub(bytes_str.len()));
             println!("{pad}{bytes_str}\t{name}");
         }
     }
@@ -113,16 +120,17 @@ impl rustc_driver::Callbacks for TypeSize {
         _compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
-        if !self.sizes.is_empty() {
-            panic!("Already computed sizes");
-        }
+        use rustc_hir::ItemKind;
+
+        assert!(self.sizes.is_empty(), "Already computed sizes");
+
         // Analyze the program and inspect the types of definitions.
+        #[allow(clippy::unwrap_used)]
         queries.global_ctxt().unwrap().enter(|tcx| {
             for id in tcx.hir().items() {
                 let hir = tcx.hir();
                 let item = hir.item(id);
 
-                use rustc_hir::ItemKind;
                 match item.kind {
                     ItemKind::GlobalAsm(..)
                     | ItemKind::Static(..)
@@ -151,6 +159,7 @@ impl rustc_driver::Callbacks for TypeSize {
     }
 }
 
+#[allow(clippy::print_stdout)]
 fn display_help() {
     println!(
         "\
@@ -177,7 +186,8 @@ fn toolchain_path(home: Option<String>, toolchain: Option<String>) -> Option<Pat
     })
 }
 
-fn read_sys_root(sys_root_arg: &Option<&str>) -> String {
+#[allow(clippy::expect_used)]
+fn read_sys_root(sys_root_arg: Option<&str>) -> String {
     // Get the sysroot, looking from most specific to this invocation to the least:
     // - command line
     // - runtime environment
@@ -225,6 +235,7 @@ fn read_sys_root(sys_root_arg: &Option<&str>) -> String {
         )
 }
 
+#[allow(clippy::exit)]
 pub fn main() {
     let early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
     rustc_driver::init_rustc_env_logger(&early_dcx);
@@ -233,7 +244,7 @@ pub fn main() {
         let sys_root_arg = arg_value(&orig_args, "--sysroot", |_| true);
         let have_sys_root_arg = sys_root_arg.is_some();
 
-        let sys_root = read_sys_root(&sys_root_arg);
+        let sys_root = read_sys_root(sys_root_arg);
 
         // make "typesize-driver --rustc" work like a subcommand that passes further args to "rustc"
         // for example `typesize-driver --rustc --version` will print the rustc version that typesize-driver
@@ -245,7 +256,7 @@ pub fn main() {
             // if we call "rustc", we need to pass --sysroot here as well
             let mut args: Vec<String> = orig_args.clone();
             if !have_sys_root_arg {
-                args.extend(vec!["--sysroot".into(), sys_root]);
+                args.extend(["--sysroot".into(), sys_root]);
             };
 
             return rustc_driver::RunCompiler::new(&args, &mut DefaultCallbacks).run();
@@ -264,7 +275,7 @@ pub fn main() {
             && (orig_args.iter().any(|a| a == "--help" || a == "-h") || orig_args.len() == 1)
         {
             display_help();
-            exit(0);
+            return Ok(());
         }
 
         // this conditional check for the --sysroot flag is there so users can call
@@ -272,7 +283,7 @@ pub fn main() {
         // without having to pass --sysroot or anything
         let mut args: Vec<String> = orig_args.clone();
         if !have_sys_root_arg {
-            args.extend(vec!["--sysroot".into(), sys_root]);
+            args.extend(["--sysroot".into(), sys_root]);
         };
 
         if env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
